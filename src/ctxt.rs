@@ -2,7 +2,7 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 use sqa_engine::{EngineContext, PlainSender};
 use sqa_ffmpeg::{MediaContext, MediaFile};
 use sqa_engine::param::{Parameter, FadeDetails};
-use crate::config::Config;
+use config::Config;
 use std::collections::HashMap;
 use sqa_engine::sync::AudioThreadMessage;
 use failure::Error;

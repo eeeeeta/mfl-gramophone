@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::default::Default;
 
 #[derive(Deserialize)]
 pub struct PlaybackFile {
@@ -14,10 +15,10 @@ pub struct Config {
 }
 impl Config {
     pub fn get() -> Result<Self, ::failure::Error> {
-        let mut settings = ::config::Config::default();
+        let mut settings = ::cfg::Config::default();
         settings
-            .merge(::config::File::with_name("mfl-gramophone"))?
-            .merge(::config::Environment::with_prefix("GRAMOPHONE"))?;
+            .merge(::cfg::File::with_name("mfl-gramophone"))?
+            .merge(::cfg::Environment::with_prefix("GRAMOPHONE"))?;
         let ret: Self = settings.try_into()?;
         Ok(ret)
     }

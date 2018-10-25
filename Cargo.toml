@@ -1,6 +1,5 @@
 [package]
 authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
-edition = "2018"
 name = "mfl-gramophone"
 version = "0.1.0"
 

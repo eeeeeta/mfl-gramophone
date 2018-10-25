@@ -1,7 +1,7 @@
 use std::net::{UdpSocket, ToSocketAddrs};
 use std::sync::mpsc::Sender;
 use rosc::{OscMessage, OscPacket, OscType};
-use crate::ctxt::Message;
+use ctxt::Message;
 use failure::Error;
 
 pub struct OscContext {
