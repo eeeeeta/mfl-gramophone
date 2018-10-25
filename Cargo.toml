@@ -1,0 +1,22 @@
+[package]
+authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
+edition = "2018"
+name = "mfl-gramophone"
+version = "0.1.0"
+
+[dependencies]
+env_logger = "0.5.13"
+failure = "0.1.3"
+log = "0.4.5"
+rosc = "0.1.5"
+serde = "1.0.80"
+serde_derive = "1.0.80"
+sqa-engine = "0.4"
+uuid = "0.7"
+
+[dependencies.config]
+features = ["toml"]
+version = "0.9.1"
+
+[dependencies.sqa-ffmpeg]
+git = "https://github.com/eeeeeta/sqa-ffmpeg"

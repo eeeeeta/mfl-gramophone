@@ -1,0 +1,10 @@
+listen = "127.0.0.1:9091"
+channels = ["system:playback_1", "system:playback_2"]
+shutdown_secs = 5
+sample_rate = 44100
+
+[files.cake]
+uri = "/media/Music/cake.m4a"
+
+[files.mim]
+uri = "/media/Music/mim.wav"
