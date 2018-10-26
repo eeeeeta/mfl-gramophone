@@ -1,6 +1,6 @@
 use std::net::{UdpSocket, ToSocketAddrs};
 use std::sync::mpsc::Sender;
-use rosc::{OscMessage, OscPacket, OscType};
+use rosc::{OscMessage, OscPacket, OscType, self};
 use ctxt::Message;
 use failure::Error;
 
