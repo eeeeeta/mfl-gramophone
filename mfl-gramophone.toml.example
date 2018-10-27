@@ -1,9 +1,20 @@
+# Which address to listen for OSC commands on.
 listen = "127.0.0.1:9091"
+# Channel setup.
+# This is an array of JACK ports that audio will be sent to - e.g.
+# the first channel of audio (usually the 'left' channel) will be sent
+# to system:playback_1 (usually the first audio card channel) in this
+# example.
 channels = ["system:playback_1", "system:playback_2"]
+# How many seconds to wait before shutting down, but this doesn't work.
 shutdown_secs = 5
+# The sample rate of JACK and of all audio files.
+# Resampling is not yet supported.
 sample_rate = 44100
 
+# Which files to use.
 [files.cake]
+# A path to the given file.
 uri = "/media/Music/cake.m4a"
 
 [files.mim]
