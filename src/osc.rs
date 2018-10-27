@@ -23,11 +23,28 @@ impl OscContext {
                     args: None
                 }, from);
             },
+            "shutdown" => {
+                warn!("Got a shutdown request");
+                self.tx.send(Message::Shutdown)
+                    .unwrap();
+                self.send_ack(from);
+            },
+            "fast_shutdown" => {
+                warn!("Got a fast shutdown request");
+                self.tx.send(Message::FastShutdown)
+                    .unwrap();
+                self.send_ack(from);
+            },
             "file" => {
                 if addr.len() > 3 {
                     match addr[3] {
                         "start" => {
                             self.tx.send(Message::PlayFile(addr[2].into()))
+                                .unwrap();
+                            self.send_ack(from);
+                        },
+                        "debug" => {
+                            self.tx.send(Message::DebugFile(addr[2].into()))
                                 .unwrap();
                             self.send_ack(from);
                         },

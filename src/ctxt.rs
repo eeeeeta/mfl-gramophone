@@ -14,6 +14,7 @@ pub enum Message {
     FadeInFile(String, u64),
     StopFile(String),
     FadeOutFile(String, u64),
+    DebugFile(String),
     Engine(AudioThreadMessage),
     BufferComplete(String)
 }
@@ -55,6 +56,9 @@ impl Context {
             },
             StopFile(st) => {
                 self.start_stop_file(&st, false)?;
+            },
+            DebugFile(st) => {
+                self.debug_file(&st)?;
             },
             FadeInFile(st, dur_ms) => {
                 self.prepare_file(&st)?;
@@ -122,6 +126,19 @@ impl Context {
             }
         }
         name
+    }
+    pub fn debug_file(&mut self, file: &str) -> Result<(), Error> {
+        info!("Debugging state for file '{}'", file);
+        let file = self.active_files.get_mut(file)
+            .ok_or(format_err!("No such active file."))?;
+        info!("senders: {}", file.senders.len());
+        info!("faded_out: {}", file.faded_out);
+        info!("buffered: {}", file.faded_out);
+        info!("sender 0 alive: {}", file.senders[0].alive());
+        info!("sender 0 active: {}", file.senders[0].active());
+        info!("sender 0 position_samples: {}", file.senders[0].position_samples());
+        info!("volume: {:?}", file.senders[0].volume());
+        Ok(())
     }
     pub fn start_stop_file(&mut self, file: &str, start: bool) -> Result<(), Error> {
         info!("Setting active state to {} for file '{}'", start, file);
