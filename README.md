@@ -7,7 +7,7 @@ A simple Rust application to play audio, using JACK, when it receives commands v
 
 ## Logging
 
-**Note**: `export RUST_LOG=mfl_gramophone=INFO` if you want any useful logging informattion.
+**Note**: `export RUST_LOG=mfl_gramophone=INFO` if you want any useful logging information.
 
 ## Configuration
 
