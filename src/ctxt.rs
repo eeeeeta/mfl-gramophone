@@ -245,7 +245,13 @@ impl Context {
                 }
             }
             info!("File '{}' epoch {} finished buffering", filename, epo);
-            txc.send(Message::BufferComplete(filename, epo)).unwrap();
+            txc.send(Message::BufferComplete(filename.clone(), epo)).unwrap();
+            while let Ok(x) = brx.recv() {
+                if let BufferingMessage::Die = x {
+                    break;
+                }
+            }
+            info!("File '{}' epoch {} buffer thread stopped", filename, epo);
         });
         self.active_files.insert(filename2, ActiveFile {
             senders: ctls,
