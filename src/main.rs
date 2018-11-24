@@ -79,6 +79,7 @@ fn main() {
     });
     let mut ctx = ctxt::Context { 
         rx, ec, mctx, cfg, tx,
+        epoch: 0,
         active_files: HashMap::new()
     };
     ctx.run();

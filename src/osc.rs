@@ -10,78 +10,87 @@ pub struct OscContext {
 }
 
 impl OscContext {
-    fn process_msg<A: ToSocketAddrs>(&mut self, msg: OscMessage, from: A) {
-        let addr = msg.addr.trim().split("/").collect::<Vec<_>>();
+    fn parse_message(addr: &[&str], args: Option<Vec<OscType>>) -> Option<Message> {
         if addr.len() == 1 {
-            return;
+            return None;
         }
         match addr[1] {
             "ping" => {
-                info!("Got a ping");
-                self.send(OscMessage {
-                    addr: "/pong".into(),
-                    args: None
-                }, from);
+                Some(Message::Ping)
             },
             "shutdown" => {
-                warn!("Got a shutdown request");
-                self.tx.send(Message::Shutdown)
-                    .unwrap();
-                self.send_ack(from);
-            },
-            "fast_shutdown" => {
-                warn!("Got a fast shutdown request");
-                self.tx.send(Message::FastShutdown)
-                    .unwrap();
-                self.send_ack(from);
+                Some(Message::Shutdown)
             },
             "file" => {
-                if addr.len() > 3 {
-                    match addr[3] {
-                        "start" => {
-                            self.tx.send(Message::PlayFile(addr[2].into()))
-                                .unwrap();
-                            self.send_ack(from);
-                        },
-                        "debug" => {
-                            self.tx.send(Message::DebugFile(addr[2].into()))
-                                .unwrap();
-                            self.send_ack(from);
-                        },
-                        "stop" => {
-                            self.tx.send(Message::StopFile(addr[2].into()))
-                                .unwrap();
-                            self.send_ack(from);
-                        },
-                        x @ "fade_in" | x @ "fade_out" => {
-                            if let Some(OscType::Int(dur)) = msg.args.and_then(|x| x.get(0).map(|x| x.clone())) {
-                                if x == "fade_in" {
-                                    self.tx.send(Message::FadeInFile(addr[2].into(), dur as _))
-                                        .unwrap();
-                                }
-                                else {
-                                    self.tx.send(Message::FadeOutFile(addr[2].into(), dur as _))
-                                        .unwrap();
-                                }
-                                self.send_ack(from);
+                if addr.len() <= 3 {
+                    return None;
+                }
+                match addr[3] {
+                    "start" => {
+                        if let Some(args) = args {
+                            if args.len() != 1 {
+                                return None;
                             }
-                            else {
-                                warn!("Incorrect arguments provided for fade command");
-                                self.send(OscMessage {
-                                    addr: "/incorrect_args".into(),
-                                    args: Some(vec![OscType::String(addr.join("/"))])
-                                }, from);
+                            let level: f64;
+                            match args[0] {
+                                OscType::Float(f) => level = f as _,
+                                OscType::Double(f) => level = f as _,
+                                _ => return None
                             }
-                        },
-                        _ => {
-                            self.send_unknown(addr.join("/"), from);
+                            Some(Message::PlayFile(addr[2].into(), level))
                         }
+                        else {
+                            None
+                        }
+                    },
+                    "debug" => {
+                        Some(Message::DebugFile(addr[2].into()))
+                    },
+                    "stop" => {
+                        Some(Message::StopFile(addr[2].into()))
+                    },
+                    "fade" => {
+                        if let Some(args) = args {
+                            if args.len() != 2 {
+                                return None;
+                            }
+                            let dur_ms: u64;
+                            let target: f64;
+                            match args[1] {
+                                OscType::Int(dur) => dur_ms = dur as _,
+                                _ => return None
+                            }
+                            match args[0] {
+                                OscType::Float(f) => target = f as _,
+                                OscType::Double(f) => target = f as _,
+                                _ => return None
+                            }
+                            Some(Message::FadeFile(addr[2].into(), target, dur_ms))
+                        }
+                        else {
+                            None
+                        }
+                    },
+                    _ => {
+                        None
                     }
                 }
             },
             _ => {
-                self.send_unknown(addr.join("/"), from);
+                None
             }
+        }
+    }
+    fn process_msg<A: ToSocketAddrs>(&mut self, msg: OscMessage, from: A) {
+        info!("Received message: {} ({} args)", msg.addr, msg.args.as_ref().map(|x| x.len()).unwrap_or(0));
+        let addr = msg.addr.trim().split("/").collect::<Vec<_>>();
+        if let Some(m) = Self::parse_message(&addr, msg.args) {
+            self.tx.send(m).unwrap();
+            self.send_ack(from);
+            info!("ACK sent");
+        }
+        else {
+            self.send_unknown(addr.join("/"), from);
         }
     }
     fn send_ack<A: ToSocketAddrs>(&mut self, a: A) {

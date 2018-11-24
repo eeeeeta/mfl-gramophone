@@ -9,14 +9,38 @@ use failure::Error;
 
 pub enum Message {
     Shutdown,
-    FastShutdown,
-    PlayFile(String),
-    FadeInFile(String, u64),
+    Ping,
+    /// /file/NAME/play LEVEL
+    ///
+    /// Starts playing a file.
+    ///
+    /// - LEVEL: the volume level, in decibels, to begin playback at
+    PlayFile(String, f64),
+    /// /file/NAME/fade LEVEL DURATION
+    ///
+    /// Fades the volume of a file.
+    ///
+    /// - LEVEL: the volume level, in decibels, to fade to
+    /// - DURATION: the duration, in milliseconds, for the fade
+    FadeFile(String, f64, u64),
+    /// /file/NAME/stop
+    /// 
+    /// Stops playback.
     StopFile(String),
-    FadeOutFile(String, u64),
+    /// /file/NAME/debug
+    ///
+    /// Prints debug information to the logs.
     DebugFile(String),
     Engine(AudioThreadMessage),
-    BufferComplete(String)
+    BufferComplete(String, u32)
+}
+/// Converts a linear amplitude to decibels.
+pub fn lin_db(lin: f64) -> f64 {
+    lin.log10() * 20.0
+}
+/// Converts a decibel value to a linear amplitude.
+pub fn db_lin(db: f64) -> f64 {
+    10.0_f64.powf(db / 20.0)
 }
 pub enum BufferingMessage {
     Continue,
@@ -25,8 +49,8 @@ pub enum BufferingMessage {
 
 pub struct ActiveFile {
     senders: Vec<PlainSender>,
-    faded_out: bool,
     buffered: bool,
+    epoch: u32,
     tx: Sender<BufferingMessage>
 }
 impl Drop for ActiveFile {
@@ -42,6 +66,7 @@ pub struct Context {
     pub mctx: MediaContext,
     pub active_files: HashMap<String, ActiveFile>,
     pub cfg: Config,
+    pub epoch: u32
 }
 impl Context {
     pub fn process_message(&mut self, msg: Message) -> Result<(), Error> {
@@ -49,9 +74,9 @@ impl Context {
 
         match msg {
             Shutdown => self.shutdown(),
-            FastShutdown => self.fast_shutdown(),
-            PlayFile(st) => {
-                self.prepare_file(&st)?;
+            Ping => info!("Ping received"),
+            PlayFile(st, level) => {
+                self.prepare_file(&st, level)?;
                 self.start_stop_file(&st, true)?;
             },
             StopFile(st) => {
@@ -60,13 +85,8 @@ impl Context {
             DebugFile(st) => {
                 self.debug_file(&st)?;
             },
-            FadeInFile(st, dur_ms) => {
-                self.prepare_file(&st)?;
-                self.configure_file_fade(&st, true, dur_ms)?;
-                self.start_stop_file(&st, true)?;
-            },
-            FadeOutFile(st, dur_ms) => {
-                self.configure_file_fade(&st, false, dur_ms)?;
+            FadeFile(st, target, dur_ms) => {
+                self.configure_file_fade(&st, target, dur_ms)?;
             },
             Engine(msg) => {
                 use self::AudioThreadMessage::*;
@@ -107,9 +127,11 @@ impl Context {
                     _ => {}
                 }
             },
-            BufferComplete(st) => {
+            BufferComplete(st, epo) => {
                 if let Some(fi) = self.active_files.get_mut(&st) {
-                    fi.buffered = true;
+                    if epo == fi.epoch {
+                        fi.buffered = true;
+                    }
                 }
             }
         }
@@ -132,8 +154,7 @@ impl Context {
         let file = self.active_files.get_mut(file)
             .ok_or(format_err!("No such active file."))?;
         info!("senders: {}", file.senders.len());
-        info!("faded_out: {}", file.faded_out);
-        info!("buffered: {}", file.faded_out);
+        info!("buffered: {}", file.buffered);
         info!("sender 0 alive: {}", file.senders[0].alive());
         info!("sender 0 active: {}", file.senders[0].active());
         info!("sender 0 position_samples: {}", file.senders[0].position_samples());
@@ -162,31 +183,25 @@ impl Context {
         }
         Ok(())
     }
-    pub fn configure_file_fade(&mut self, file: &str, in_out: bool, dur_ms: u64) -> Result<(), Error> {
-        info!("Configuring fade (direction {}, dur {}) for file '{}'", in_out, dur_ms, file);
-        let (from, target) = if in_out {
-            (0.0, 1.0)
-        }
-        else {
-            (1.0, 0.0)
-        };
+    pub fn configure_file_fade(&mut self, file: &str, target: f64, dur_ms: u64) -> Result<(), Error> {
+        info!("Configuring fade (target {:.02}dB, dur {}) for file '{}'", target, dur_ms, file);
+        let target = db_lin(target);
         let file = self.active_files.get_mut(file)
             .ok_or(format_err!("No such active file."))?;
         let time = PlainSender::precise_time_ns();
-        let mut fd = FadeDetails::new(from, target);
+        let cur_vol = file.senders[0].volume().get(time);
+        let mut fd = FadeDetails::new(cur_vol, target as _);
         fd.set_start_time(time);
         fd.set_duration(::std::time::Duration::from_millis(dur_ms));
         fd.set_active(true);
         for ch in file.senders.iter_mut() {
             ch.set_volume(Box::new(Parameter::LinearFade(fd.clone())));
         }
-        if !in_out {
-            file.faded_out = true;
-        }
         Ok(())
     }
-    pub fn prepare_file(&mut self, file: &str) -> Result<(), Error> {
-        info!("Preparing to play file '{}'", file);
+    pub fn prepare_file(&mut self, file: &str, level: f64) -> Result<(), Error> {
+        info!("Preparing to play file '{}' at level {:.02}dB", file, level);
+        let level = db_lin(level);
         let filename = file.to_string();
         let filename2 = filename.clone();
         let file = self.cfg.files.get(file).ok_or(format_err!("No such file."))?;
@@ -196,13 +211,16 @@ impl Context {
         for i in 0..self.cfg.channels.len() {
             let mut send = self.ec.new_sender(mf.sample_rate() as u64);
             send.set_output_patch(i);
+            send.set_volume(Box::new(Parameter::Raw(level as _)));
             ctls.push(send.make_plain());
             senders.push(send);
         }
         let txc = self.tx.clone();
         let (btx, brx) = channel();
+        self.epoch += 1;
+        let epo = self.epoch;
         ::std::thread::spawn(move || {
-            info!("Starting buffering thread for file '{}'", filename);
+            info!("Starting buffering thread for file '{}' epoch {}", filename, epo);
             'outer: for frame in &mut mf {
                 match frame {
                     Ok(mut frame) => {
@@ -226,59 +244,19 @@ impl Context {
                     }
                 }
             }
-            info!("File '{}' finished buffering", filename);
-            txc.send(Message::BufferComplete(filename)).unwrap();
+            info!("File '{}' epoch {} finished buffering", filename, epo);
+            txc.send(Message::BufferComplete(filename, epo)).unwrap();
         });
         self.active_files.insert(filename2, ActiveFile {
             senders: ctls,
-            faded_out: false,
             buffered: false,
+            epoch: self.epoch,
             tx: btx
         });
         Ok(())
     }
-    pub fn fast_shutdown(&mut self) -> ! {
-        panic!("Fast shutdown requested!")
-    }
     pub fn shutdown(&mut self) -> ! {
         warn!("Shutting down...");
-        let mut elapsed = ::std::time::Duration::new(0, 0);
-        let thresh = ::std::time::Duration::new(self.cfg.shutdown_secs, 0);
-
-        loop {
-            let mut cont = false;
-            if elapsed >= thresh {
-                warn!("Shutting down forcefully due to timeout.");
-                break;
-            }
-            elapsed += ::std::time::Duration::new(1, 0);
-            let mut recordings = vec![];
-            for (_, file) in self.active_files.iter() {
-                if !file.faded_out {
-                    for sender in file.senders.iter() {
-                        recordings.push(sender.position_samples());
-                    }
-                }
-            }
-            ::std::thread::sleep(::std::time::Duration::new(1, 0));
-            // Check whether any senders made any progress
-            // (i.e. audio is still playing).
-            // If yes, don't die just yet (we may interrupt audio)
-            let mut i = 0;
-            for (_, file) in self.active_files.iter() {
-                if !file.faded_out {
-                    for sender in file.senders.iter() {
-                        if sender.position_samples() != recordings[i] {
-                            cont = true;
-                        }
-                        i += 1;
-                    }
-                }
-            }
-            if !cont {
-                break;
-            }
-        }
         panic!("Shutdown requested!");
     }
     pub fn run(&mut self) -> ! {
@@ -287,8 +265,7 @@ impl Context {
             let res = self.rx.recv();
             match res {
                 Err(_) => {
-                    error!("Channel split; performing shutdown");
-                    self.shutdown();
+                    panic!("Channel split; performing shutdown");
                 },
                 Ok(m) => {
                     if let Err(e) = self.process_message(m) {
