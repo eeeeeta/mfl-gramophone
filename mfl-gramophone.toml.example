@@ -19,3 +19,5 @@ uri = "/media/Music/cake.m4a"
 
 [files.mim]
 uri = "/media/Music/mim.wav"
+# Set 'looping' to true to have the file loop forever, until you stop it manually.
+looping = true

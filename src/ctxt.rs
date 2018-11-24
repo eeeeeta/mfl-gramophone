@@ -205,6 +205,7 @@ impl Context {
         let filename = file.to_string();
         let filename2 = filename.clone();
         let file = self.cfg.files.get(file).ok_or(format_err!("No such file."))?;
+        let looping = file.looping;
         let mut mf = MediaFile::new(&mut self.mctx, &file.uri)?;
         let mut senders = vec![];
         let mut ctls = vec![];
@@ -221,27 +222,38 @@ impl Context {
         let epo = self.epoch;
         ::std::thread::spawn(move || {
             info!("Starting buffering thread for file '{}' epoch {}", filename, epo);
-            'outer: for frame in &mut mf {
-                match frame {
-                    Ok(mut frame) => {
-                        for (ch, smpl) in &mut frame {
-                            if let Some(s) = senders.get_mut(ch) {
-                                while let Some(_) = s.buf.try_push(smpl.f32()) {
-                                    let msg = brx.recv();
-                                    match msg {
-                                        Ok(BufferingMessage::Continue) => {},
-                                        Ok(BufferingMessage::Die) | Err(_) => {
-                                            info!("File '{}' buffering ended prematurely", filename);
-                                            break 'outer;
+            loop {
+                'outer: for frame in &mut mf {
+                    match frame {
+                        Ok(mut frame) => {
+                            for (ch, smpl) in &mut frame {
+                                if let Some(s) = senders.get_mut(ch) {
+                                    while let Some(_) = s.buf.try_push(smpl.f32()) {
+                                        let msg = brx.recv();
+                                        match msg {
+                                            Ok(BufferingMessage::Continue) => {},
+                                            Ok(BufferingMessage::Die) | Err(_) => {
+                                                info!("File '{}' buffering ended prematurely", filename);
+                                                break 'outer;
+                                            }
                                         }
                                     }
                                 }
                             }
+                        },
+                        Err(e) => {
+                            warn!("Buffer error for file '{}': {}", filename, e);
                         }
-                    },
-                    Err(e) => {
-                        warn!("Buffer error for file '{}': {}", filename, e);
                     }
+                }
+                if looping {
+                    info!("File '{}' epoch {} looping", filename, epo);
+                    if let Err(e) = mf.seek(::sqa_ffmpeg::Duration::seconds(0)) {
+                        warn!("Failed to seek for file '{}': {}", filename, e);
+                    }
+                }
+                else {
+                    break;
                 }
             }
             info!("File '{}' epoch {} finished buffering", filename, epo);

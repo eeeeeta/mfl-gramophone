@@ -4,6 +4,8 @@ use std::default::Default;
 #[derive(Deserialize)]
 pub struct PlaybackFile {
     pub uri: String,
+    #[serde(default)]
+    pub looping: bool
 }
 #[derive(Deserialize)]
 pub struct Config {
